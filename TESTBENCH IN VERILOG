@@ -1,0 +1,75 @@
+module tb_apb;
+
+    reg PCLK;
+    reg PRESETn;
+    reg start_transaction; // Declare start_transaction signal
+    wire [31:0] PADDR;
+    wire PSELx;
+    wire PENABLE;
+    wire PWRITE;
+    wire [31:0] PWDATA;
+    wire [31:0] PRDATA;
+    wire PREADY;
+    wire PSLVERR;
+
+    // Instantiate APB Master
+    apb_master master (
+        .PCLK(PCLK),
+        .PRESETn(PRESETn),
+        .start_transaction(start_transaction), // Connect start_transaction
+        .PADDR(PADDR),
+        .PSELx(PSELx),
+        .PENABLE(PENABLE),
+        .PWRITE(PWRITE),
+        .PWDATA(PWDATA),
+        .PRDATA(PRDATA),
+        .PREADY(PREADY),
+        .PSLVERR(PSLVERR)
+    );
+
+    // Instantiate APB Slave
+    apb_slave slave (
+        .PCLK(PCLK),
+        .PRESETn(PRESETn),
+        .PADDR(PADDR),
+        .PSELx(PSELx),
+        .PENABLE(PENABLE),
+        .PWRITE(PWRITE),
+        .PWDATA(PWDATA),
+        .PRDATA(PRDATA),
+        .PREADY(PREADY),
+        .PSLVERR(PSLVERR)
+    );
+
+    // Clock Generation
+    always #5 PCLK = ~PCLK;
+
+    initial begin
+        PCLK = 0;
+        PRESETn = 0;
+        start_transaction = 0;
+        #10;
+        PRESETn = 1;
+        #10;
+        
+        // Start a write transaction
+        start_transaction = 1;
+        #10;
+        start_transaction = 0;
+        #20;
+
+        // Start a read transaction
+        start_transaction = 1;
+        #10;
+        start_transaction = 0;
+
+        // Wait for the transaction to complete
+        #100;
+
+        // Observe the read data
+        $display("Read Data: %h", PRDATA);
+
+        // End simulation
+        $stop;
+    end
+endmodule
