@@ -1,0 +1,141 @@
+module apb_master (
+    input wire PCLK,
+    input wire PRESETn,
+    input wire start_transaction,
+    output reg [31:0] PADDR,
+    output reg PSELx,
+    output reg PENABLE,
+    output reg PWRITE,
+    output reg [31:0] PWDATA,
+    input wire [31:0] PRDATA,
+    input wire PREADY,
+    input wire PSLVERR
+);
+    // Master State Encoding
+    typedef enum logic [1:0] {
+        IDLE = 2'b00,
+        SETUP = 2'b01,
+        ACCESS = 2'b10
+    } state_t;
+
+    state_t state, next_state;
+
+    // Internal signal to switch between write and read
+    reg read_enable;
+
+    // State Machine
+    always @(posedge PCLK or negedge PRESETn) begin
+      if (!PRESETn) begin
+            state <= IDLE;
+        end else begin
+            state <= next_state;
+        end
+    end
+
+    // Next State Logic
+    always @(*) begin
+        next_state = state;
+        case (state)
+            IDLE: begin
+                if (start_transaction) 
+                    next_state = SETUP;
+            end
+            SETUP: begin
+                next_state = ACCESS;
+            end
+            ACCESS: begin
+                if (PREADY)
+                    next_state = IDLE;
+            end
+        endcase
+    end
+
+    // Output Logic
+    always @(posedge PCLK or negedge PRESETn) begin
+        if (!PRESETn) begin
+            PADDR <= 32'b0;
+            PSELx <= 1'b0;
+            PENABLE <= 1'b0;
+            PWRITE <= 1'b0;
+            PWDATA <= 32'b0;
+            read_enable <= 1'b0;
+        end else begin
+            case (state)
+                IDLE: begin
+                    PSELx <= 1'b0;
+                    PENABLE <= 1'b0;
+                end
+                SETUP: begin
+                    PADDR <= 32'h0000_0004; // Example address
+                    PSELx <= 1'b1;
+                    PENABLE <= 1'b0;
+                    if (read_enable) begin
+                        PWRITE <= 1'b0; // Read operation
+                    end else begin
+                        PWRITE <= 1'b1; // Write operation
+                        PWDATA <= 32'hA5A5_A5A5; // Example write data
+                    end
+                end
+                ACCESS: begin
+                    PENABLE <= 1'b1;
+                    if (PREADY) begin
+                        PSELx <= 1'b0;
+                        PENABLE <= 1'b0;
+                        read_enable <= ~read_enable;
+                    end
+                end
+            endcase
+        end
+    end
+endmodule
+
+module apb_slave (
+    input wire PCLK,
+    input wire PRESETn,
+    input wire [31:0] PADDR,
+    input wire PSELx,
+    input wire PENABLE,
+    input wire PWRITE,
+    input wire [31:0] PWDATA,
+    output reg [31:0] PRDATA,
+    output reg PREADY,
+    output reg PSLVERR
+);
+
+    // Registers to hold slave data
+    reg [31:0] slave_reg;
+
+    // Slave Response Logic
+    always @(posedge PCLK or negedge PRESETn) begin
+        if (!PRESETn) 
+          begin
+            PRDATA <= 32'b0;
+            PREADY <= 1'b0;
+            PSLVERR <= 1'b0;
+            slave_reg <= 32'b0;
+        end 
+       else 
+         begin
+            if (PSELx && PENABLE) 
+              begin
+                if (PWRITE)
+                  begin
+                    // Write operation
+                    slave_reg <= PWDATA;
+                    PREADY <= 1'b1;
+                    PRDATA <= 32'hA5A5_A5A5; // Return A5A5_A5A5 during write
+                    $display("Slave Write: %h", PWDATA); // Debug statement
+                  end 
+              else 
+                begin
+                    // Read operation
+                    PREADY <= 1'b1;
+                    PRDATA <= slave_reg; // Provide read data
+                    $display("Slave Read: %h", PRDATA); // Debug statement
+                end
+            end else begin
+                PREADY <= 1'b0;
+            end
+        end
+    end
+endmodule
