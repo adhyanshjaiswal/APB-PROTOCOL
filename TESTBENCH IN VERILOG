@@ -1,75 +1,118 @@
-module tb_apb;
+module tb;
+  
+    bit t_clk;
+    reg t_preset;
+    reg [31:0] t_pwdata;
+    reg [31:0] t_paddr;
+    reg t_pselx, t_penable, t_pwrite;
+  
+    wire [31:0] t_prdata;
+    wire t_pready;
+    wire t_pslverr; 
 
-    reg PCLK;
-    reg PRESETn;
-    reg start_transaction; // Declare start_transaction signal
-    wire [31:0] PADDR;
-    wire PSELx;
-    wire PENABLE;
-    wire PWRITE;
-    wire [31:0] PWDATA;
-    wire [31:0] PRDATA;
-    wire PREADY;
-    wire PSLVERR;
-
-    // Instantiate APB Master
-    apb_master master (
-        .PCLK(PCLK),
-        .PRESETn(PRESETn),
-        .start_transaction(start_transaction), // Connect start_transaction
-        .PADDR(PADDR),
-        .PSELx(PSELx),
-        .PENABLE(PENABLE),
-        .PWRITE(PWRITE),
-        .PWDATA(PWDATA),
-        .PRDATA(PRDATA),
-        .PREADY(PREADY),
-        .PSLVERR(PSLVERR)
+    //parameter t_wait_for_cycles = 4'd1;
+  //for wait state
+  integer wait_for_cycles_var;  
+  
+  initial
+  begin
+    if($value$plusargs("wait_for_cycles=%d", wait_for_cycles_var))
+      $display("wait_for_cycles_var = %0d",wait_for_cycles_var);
+  end
+  
+    apb_slave a_s(
+        .pclk(t_clk), 
+        .preset(t_preset), 
+        .paddr(t_paddr), 
+        .psel(t_pselx), 
+        .penable(t_penable), 
+        .pwrite(t_pwrite), 
+        .pwdata(t_pwdata), 
+        .prdata(t_prdata), 
+        .pready(t_pready), 
+        .pslverr(t_pslverr)
     );
-
-    // Instantiate APB Slave
-    apb_slave slave (
-        .PCLK(PCLK),
-        .PRESETn(PRESETn),
-        .PADDR(PADDR),
-        .PSELx(PSELx),
-        .PENABLE(PENABLE),
-        .PWRITE(PWRITE),
-        .PWDATA(PWDATA),
-        .PRDATA(PRDATA),
-        .PREADY(PREADY),
-        .PSLVERR(PSLVERR)
-    );
-
-    // Clock Generation
-    always #5 PCLK = ~PCLK;
-
+  
+    always #5 t_clk = ~t_clk;
+  
     initial begin
-        PCLK = 0;
-        PRESETn = 0;
-        start_transaction = 0;
-        #10;
-        PRESETn = 1;
-        #10;
+        $monitor("t_preset=%0d, t_pwdata=%0d, t_paddr=%0d, t_pselx=%0d, t_penable=%0d, t_pwrite=%0d, t_prdata=%0d, t_pready=%0d, t_pslverr=%0d, a_s.state = %b", 
+            t_preset, t_pwdata, t_paddr, t_pselx, t_penable, t_pwrite, t_prdata, t_pready, t_pslverr, a_s.state, $time);
         
-        // Start a write transaction
-        start_transaction = 1;
-        #10;
-        start_transaction = 0;
-        #20;
+        // reset condition 
+        #5 t_preset = 0; //5
+        t_pwrite = 0;
+      	t_pselx = 0;
+      	t_penable = 0;
+        t_paddr = 32'b0;
+        t_pwdata = 32'b0;
+      
+        #10 t_preset = 1; //15  //will stay in idle state
 
-        // Start a read transaction
-        start_transaction = 1;
-        #10;
-        start_transaction = 0;
-
-        // Wait for the transaction to complete
-        #100;
-
-        // Observe the read data
-        $display("Read Data: %h", PRDATA);
-
-        // End simulation
-        $stop;
+        // Testing write operation   --> setup state
+        #10 t_paddr = 32'd11; //25
+        t_pwdata = 32'd171;
+        t_pwrite = 1;
+        t_pselx = 1;
+        t_penable = 0;
+      
+        // Testing write operation   --> access state
+        #10 t_penable = 1; //35
+		
+      //wait state	
+      repeat(wait_for_cycles_var) begin 
+          #10;
+        end 
+        
+        // Testing read operation   --> idle state
+        #10 t_pwrite = 0;  //45
+        t_penable = 0;
+        t_pwdata =0;
+        t_pselx = 0;
+      
+      
+        #1 t_pwrite = 0; 
+        // Testing read operation   --> setup state
+        #9 t_pselx = 1;  //55
+        t_penable = 0;
+        t_paddr=32'd11;
+      
+        // Testing read operation   --> access state
+        #10 t_penable = 1;   //65  
+      
+        //wait state	
+      	repeat(wait_for_cycles_var) begin 
+          #10;
+        end 
+        
+        //back to idle state
+        #10 t_penable = 0;
+        t_pselx = 0;
+      
+      $display("-----------------------------------------------");
+      $display("**** slave to be ready and check read data ****");   			  $display("-----------------------------------------------");
+      $display("\tpaddr=%0d, pwdata=%0d, prdata=%0d",t_paddr,t_pwdata,t_prdata);
+      $display("-----------------------------------------------");
+      if (t_prdata == 32'd12)
+        $display("\t Succes:read data correct!");
+      else begin
+        $display("\t Error:read data incorrect!");
+      end
+      $display("-----------------------------------------------");
+      
+      
+      // After each transaction in the testbench, check for pslverr
+      if (t_pslverr)
+        $display("\t Error: APB Slave reported an error!");
+      $display("-----------------------------------------------");
+      #20 $finish;
     end
+
+  //displaying the wave form
+    initial begin 
+        $dumpfile("dump.vcd");
+        $dumpvars;
+        
+    end 
+      
 endmodule
